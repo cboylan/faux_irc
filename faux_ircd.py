@@ -8,15 +8,19 @@ PORT=42427
 TIMEOUT=1.0
 EOM="\r\n"
 
+#TODO: Add NickManager, ChannelManager, and OptParse CLI option support
+
 class IRCConnection(object):
-    def __init__(self, sock, epoll, channels):
+    def __init__(self, sock, epoll, channels, nicks):
         self.sock = sock
         self._fileno = sock.fileno()
         self.epoll = epoll
         self.channels = channels
+        self.joined_channels = []
+        self.nicks = nicks
+        self.nick = None
         self.input_buf = ""
         self.output_buf = ""
-        self.nick = None
 
         self.handlers = {
             "NICK": IRCConnection.handle_nick,
@@ -54,8 +58,11 @@ class IRCConnection(object):
     def handle_nick(self, msg):
         regex = re.compile("^NICK (\w{1,9})$")
         match = regex.match(msg)
-        if match:
+        if match and match.group(1) not in self.nicks:
+            if self.nick is not None:
+                self.nicks.remove(self.nick)
             self.nick = match.group(1)
+            self.nicks.append(self.nick)
             return False
         else:
             self.output_buf += "ERROR 1" + EOM
@@ -65,10 +72,11 @@ class IRCConnection(object):
         if self.nick is not None:
             regex = re.compile("^JOIN (#\w{0,199})$")
             match = regex.match(msg)
-            if match:
+            if match and match.group(1) not in self.joined_channels:
                 l = self.channels.get(match.group(1), [])
                 l.append(self)
                 self.channels[match.group(1)] = l
+                self.joined_channels.append(match.group(1))
                 return False
             else:
                 self.output_buf += "ERROR 2" + EOM
@@ -80,9 +88,10 @@ class IRCConnection(object):
         if self.nick is not None:
             regex = re.compile("^PART (#\w{0,199})$")
             match = regex.match(msg)
-            if match:
+            if match and match.group(1) in self.joined_channels:
                 try:
                     self.channels.get(match.group(1), []).remove(self)
+                    self.joined_channels.remove(match.group(1))
                     return False
                 except ValueError:
                     self.output_buf += "ERROR 2" + EOM
@@ -109,7 +118,7 @@ class IRCConnection(object):
             match = regex.match(msg)
             if match:
                 channel = self.channels.get(match.group(1), None)
-                if channel is not None:
+                if channel is not None and match.group(1) in self.joined_channels:
                     for conn in channel:
                         conn.write("PRVMSG {c} {m}".format(c=match.group(1), m=match.group(2)) + EOM)
                 else:
@@ -117,9 +126,17 @@ class IRCConnection(object):
                     return True
         return False
 
+    def close(self):
+        self.sock.close()
+        if self.nick is not None:
+            self.nicks.remove(self.nick)
+        for channel in self.joined_channels:
+            self.channels[channel].remove(self)
+
 def process_loop():
     channels = {}
     connections = {}
+    nicks = []
 
     serversocket = socket.socket(
         socket.AF_INET, socket.SOCK_STREAM)
@@ -137,12 +154,12 @@ def process_loop():
                 if fileno == serversocket.fileno():
                     connection, address = serversocket.accept()
                     connection.setblocking(0)
-                    irc_conn = IRCConnection(connection, epoll, channels)
+                    irc_conn = IRCConnection(connection, epoll, channels, nicks)
                     epoll.register(irc_conn.fileno(), select.EPOLLIN)
                     connections[irc_conn.fileno()] = irc_conn
                     continue
                 if event & select.EPOLLHUP:
-                    poll.unregister(fileno)
+                    epoll.unregister(fileno)
                     connections[fileno].close()
                     del connections[fileno]
                     continue
@@ -154,6 +171,7 @@ def process_loop():
         epoll.unregister(serversocket.fileno())
         epoll.close()
         serversocket.close()
+        return
 
 if __name__ == "__main__":
     process_loop()
