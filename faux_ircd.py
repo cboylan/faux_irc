@@ -4,7 +4,7 @@ import socket
 import select
 import re
 
-PORT=42427
+PORT=42424
 TIMEOUT=1.0
 EOM="\r\n"
 
@@ -42,6 +42,8 @@ class IRCConnection(object):
         msgs = self.input_buf.rsplit(EOM, 1)
         if len(msgs) > 1:
             for msg in msgs[0].split(EOM):
+                print(msg)
+
                 if self.handlers.get(msg.split(" ", 1)[0], IRCConnection.default_handler)(self, msg):
                     self.epoll.modify(self._fileno, select.EPOLLOUT | select.EPOLLIN)
             self.input_buf = msgs[1]
@@ -114,13 +116,13 @@ class IRCConnection(object):
 
     def handle_prvmsg(self, msg):
         if self.nick is not None:
-            regex = re.compile("^PRVMSG (#\w{0,199}) ([\s\w]*)$")
+            regex = re.compile("^PRVMSG (#\w{0,199}) (.*)$")
             match = regex.match(msg)
             if match:
                 channel = self.channels.get(match.group(1), None)
                 if channel is not None and match.group(1) in self.joined_channels:
                     for conn in channel:
-                        conn.write("PRVMSG {c} {m}".format(c=match.group(1), m=match.group(2)) + EOM)
+                        conn.write("PRVMSG {c} {n}: {m}".format(c=match.group(1), n = self.nick, m=match.group(2)) + EOM)
                 else:
                     self.output_buf += "ERROR 2" + EOM
                     return True
