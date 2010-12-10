@@ -63,8 +63,6 @@ class IRCConnection(object):
         #If at least one whole message is found process it.
         if len(msgs) > 1:
             for msg in msgs[0].split(EOM):
-                print(msg)
-
                 if self.handlers.get(msg.split(" ", 1)[0],
                         IRCConnection.default_handler)(self, msg):
                     self.epoll.modify(self._fileno,
@@ -208,7 +206,6 @@ def process_loop(port):
                     continue
                 #If a connection dies handle it.
                 if event & select.EPOLLRDHUP:
-                    print "EPOLL killing connection"
                     epoll.unregister(fileno)
                     connections[fileno].close()
                     del connections[fileno]
