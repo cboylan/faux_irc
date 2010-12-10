@@ -1,0 +1,145 @@
+Clark Boylan
+CS 494
+Faux IRC Specification
+Final Project
+12/10/2010
+spec.txt
+
+	Faux IRC
+
+1. Introduction
+The Faux IRC protocol has been inspired by IRC (Internet Relay Chat) and
+specifies a similar yet much simpler protocol. Like IRC the goal of Faux IRC is
+to provide text based conferencing to users through channels and the servers
+that host them. Users connect to a server, join channel(s), and are then able to
+communicate with others in the same channel.
+
+1.1 Servers
+The Faux IRC server is the process that provides the text based conferencing
+service to its users. It handles connections from clients, reads input from
+clients, and forwards these inputs to clients joined to the addressed channels.
+Unlike IRC proper Faux IRC does not support networks of interconnected servers.
+Servers are standalone processes and do not share information with other
+servers.
+
+1.2 Clients
+Faux IRC clients are any process that connects to a Faux IRC server. As in IRC
+each client is identified with a unique nickname (nick). A nick is comprised of
+up to nine alphanumeric ASCII characters. Clients connect to the Faux IRC server
+in order to enable text conferencing with other clients.
+
+1.3 Channels
+A channel is a logical grouping of clients. Every client joined to a channel
+receives messages addressed to that channel. It is though these groupings that
+Faux IRC supports text based conferencing.
+
+Channel names are strings that begin with the '#' character end with up to 199
+alphanumeric ASCII characters. Channels are created when the first client joins
+a channel and are destroyed when the last client leaves the channel. In addition
+to joining and leaving channels clients can list all available channels.
+
+Each client should maintain a #status channel to which special information can
+be sent.
+
+1.4 Operators and Security
+In short there is no security and there are no special clients designated with
+operator powers. Connections are to be transmitted in the clear. Channels do not
+support keys. No clients have special powers allowing them to police channels
+and keep the order. If extra implementation time is found these features may be
+implemented and this section will be updated with details.
+
+2. The Faux IRC Protocol
+The following section describes the details of Faux IRC server client
+communications. All communication should be made over TCP/IP connections. There
+is no officially designated port for Faux IRC.
+
+2.1 Character Codes
+Eight bit ASCII is the only encoding supported. This keeps the implementations
+simple and allows for use on many platforms.
+
+2.2 Messages
+A Faux IRC message has two parts: a command and any command parameters. Commands
+and their parameters are described below. An ASCII space character separates a
+command and its parameters. Each message shall end with a carriage return
+followed by a line feed (CRLF). The total maximum length for a message
+(including command, parameters, and the CRLF) is 512 bytes (equivalent to 512
+characters). In the case of an error a message is responded to with a single
+byte numeric error code.
+
+2.2.1 Nick Message
+Command: NICK
+Parameter: <nickname>
+
+This command must be sent to the server before any other client communications
+will be honored. If other communications are sent from the client to the server
+before sending a valid NICK message those communications will be ignored.
+<nickname> is valid only if it is unique and consists of one to nine
+alphanumeric ASCII characters.
+
+Numeric Replies: ERR_INVALID_NICK
+
+Example: NICK clarkCRLF // Client identifies as nick clark to the server.
+
+2.2.2 Join Message
+Command: JOIN
+Parameter: <channelname>
+
+This command notifies the server that a client wishes to join the logical
+grouping of client specified by <channelname>. <channelname> is valid only if it
+begins with a '#' character following by up to 199 alphanumeric ASCII
+characters. If the channel does not already exist it will be created for the
+client.
+
+Numeric Replies: ERR_INVALID_CHANNEL
+Example: JOIN #fooCRLF // Client wishes to join the #foo channel.
+
+2.2.3 Part Message
+Command: PART
+Parameter: <channelname>
+
+This command notifies the server that a client wishes to leave a channel.
+<channelname> must be a channel that the client is current joined to. If the
+client is the last client to leave the channel the channel will be destroyed.
+
+Numeric Replies: ERR_INVALID_CHANNEL
+Example: PART #fooCRLF // Client wishes to leave the #foo channel.
+
+2.2.3 List Message
+Command: LIST
+Parameters: None
+
+This command notifies the server that the client wishes to receive a list of all
+the current valid channels.
+
+Numeric Replies: None
+Example: LIST CRLF // Client wishes to receive a list of channels.
+
+2.2.4 Private Messages
+Command: PRVMSG
+Parameters: <receiver> <text_to_be_sent>
+
+This is the command that carries all communications. <receiver> must be a valid
+channel. <text_to_be_sent> should be printable ASCII so that it can be displayed
+to the receiver(s). Clients use this message to send communications to other
+clients through the server's channels. The server uses this message to send
+channel updates to clients. Servers also use this message to send replies to the
+LIST command. These replies should be sent to the special #status channel.
+
+Numeric Replies: ERR_INVALID_CHANNEL
+Example: PRVMSG #foo Good news everyone!CRLF // Client wishes to send a message
+                                             // to the #foo channel.
+
+2.2.5 Error Message
+Command: ERROR
+Parameters: <error_code>
+
+This message is used to send the numeric error replies. The <error_code>
+parameter should be a valid error code as listed below.
+
+Numeric Replies: None
+Example: ERROR ERR_INVALID_NICK // Send the invalid nick error code.
+
+2.2.6 Error Codes
+ERROR			Code
+ERR_INVALID_NICK	1
+ERR_INVALID_CHANNEL 	2
