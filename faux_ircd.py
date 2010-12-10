@@ -1,4 +1,14 @@
 #!/usr/bin/python2
+#
+# Clark Boylan
+# CS 494
+# Final Project
+# 12/10/2010
+# faux_ircd.py
+# 
+# A non blocking event driven Faux IRC server.
+#
+# Requires epoll.
 
 import socket
 import re

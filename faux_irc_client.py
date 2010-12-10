@@ -4,10 +4,13 @@
 # CS 494
 # Final Project
 # 12/10/2010
+# faux_irc_client.py
 # 
-# (Mostly) Non blocking Faux IRC client inspired by Suckless's ii IRC client.
-# Each channel creates and input FIFO and an output file through which
-# messages are entered and printed.
+# (Mostly) Non blocking event driven Faux IRC client inspired by Suckless's ii
+# IRC client. Each channel creates and input FIFO and an output file through
+# which messages are entered and printed.
+#
+# Requires epoll.
 
 import socket
 import re
