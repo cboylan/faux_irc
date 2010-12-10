@@ -3,8 +3,8 @@
 import socket
 import select
 import re
+from optparse import OptionParser
 
-PORT=42424
 TIMEOUT=1.0
 EOM="\r\n"
 
@@ -135,14 +135,15 @@ class IRCConnection(object):
         for channel in self.joined_channels:
             self.channels[channel].remove(self)
 
-def process_loop():
+def process_loop(port):
     channels = {}
     connections = {}
     nicks = []
 
     serversocket = socket.socket(
         socket.AF_INET, socket.SOCK_STREAM)
-    serversocket.bind((socket.gethostname(), PORT))
+    serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    serversocket.bind((socket.gethostname(), port))
     serversocket.listen(5)
     serversocket.setblocking(0)
 
@@ -170,10 +171,18 @@ def process_loop():
                 if event & select.EPOLLOUT:
                     connections[fileno].process_output()
     finally:
+        for key, connection in connections.items():
+            epoll.unregister(connection.fileno())
+            connection.close()
         epoll.unregister(serversocket.fileno())
         epoll.close()
         serversocket.close()
         return
 
 if __name__ == "__main__":
-    process_loop()
+    parser = OptionParser()
+    parser.add_option("-p", "--port",
+                      action="store", type="int", dest="port", default=42424)
+    (options, args) = parser.parse_args()
+
+    process_loop(options.port)

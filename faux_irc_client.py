@@ -4,8 +4,9 @@ import socket
 import select
 import re
 import os
+import sys
+from optparse import OptionParser
 
-PORT=42424
 TIMEOUT=1.0
 EOM="\r\n"
 
@@ -52,9 +53,9 @@ class IRCChannel(object):
         self.outfile.write(output)
         self.outfile.flush()
 
-    def cleanup(self):
+    def close(self):
         os.close(self.infd)
-        os.close(self.outfd)
+        self.outfile.close()
         
 
 class ClientManager(object):
@@ -81,6 +82,15 @@ class ClientManager(object):
         self.sock.setblocking(0)
         self.epoll.register(self.sock.fileno(), select.EPOLLIN)
         self.epoll.register(self.channels["#status"].infileno(), select.EPOLLIN)
+
+    def close(self):
+        for key, channel in self.channels.items():
+            if type(key) is str:
+                self.epoll.unregister(channel.infileno())
+                channel.close()
+        self.epoll.unregister(self.sock.fileno())
+        self.epoll.close()
+        self.sock.close()
 
     def process_msgs(self, msgs):
         err_regex = re.compile("^ERROR (\d)$")
@@ -115,7 +125,7 @@ class ClientManager(object):
             elif part_match:
                 name = self.channels[fileno].name
                 self.epoll.unregister(self.channels[name].infileno())
-                self.channels[name].cleanup()
+                self.channels[name].close()
                 del self.channels[self.channels[name].infileno()]
                 del self.channels[name]
 
@@ -123,38 +133,47 @@ class ClientManager(object):
         inbuf = ""
         outbuf = ""
 
-        while True:
-            events = self.epoll.poll(TIMEOUT)
-            for fileno, event in events:
-                if fileno == self.sock.fileno() and event & select.EPOLLHUP:
-                    self.epoll.unregister(fileno)
-                    self.sock.close()
-                    return
-                if fileno == self.sock.fileno() and event & select.EPOLLIN:
-                    # Read input pass to proper channel buffer.
-                    inbuf += self.sock.recv(4096)
-                    msgs = inbuf.rsplit(EOM, 1)
-                    if len(msgs) > 1:
-                        self.process_msgs(msgs[0])
-                        inbuf = msgs[1]
-                elif event & select.EPOLLIN:
-                    # Read input pass to socket
-                    msgs = self.channels[fileno].process_input()
-                    if msgs is not None:
-                        self.handle_client_input(fileno, msgs)
-                        outbuf += EOM.join(msgs) + EOM
-                        self.epoll.modify(self.sock.fileno(), select.EPOLLOUT | select.EPOLLIN)
-                if fileno == self.sock.fileno() and event & select.EPOLLOUT:
-                    # Write out socket buffer
-                    bytes_written = self.sock.send(outbuf)
-                    outbuf = outbuf[bytes_written:]
-                    if len(outbuf) == 0:
-                        self.epoll.modify(self.sock.fileno(), select.EPOLLIN)
+        try:
+            while True:
+                events = self.epoll.poll(TIMEOUT)
+                for fileno, event in events:
+                    if fileno == self.sock.fileno() and event & select.EPOLLHUP:
+                        sys.exit()
+                    if fileno == self.sock.fileno() and event & select.EPOLLIN:
+                        # Read input pass to proper channel buffer.
+                        inbuf += self.sock.recv(4096)
+                        msgs = inbuf.rsplit(EOM, 1)
+                        if len(msgs) > 1:
+                            self.process_msgs(msgs[0])
+                            inbuf = msgs[1]
+                    elif event & select.EPOLLIN:
+                        # Read input pass to socket
+                        msgs = self.channels[fileno].process_input()
+                        if msgs is not None:
+                            self.handle_client_input(fileno, msgs)
+                            outbuf += EOM.join(msgs) + EOM
+                            self.epoll.modify(self.sock.fileno(), select.EPOLLOUT | select.EPOLLIN)
+                    if fileno == self.sock.fileno() and event & select.EPOLLOUT:
+                        # Write out socket buffer
+                        bytes_written = self.sock.send(outbuf)
+                        outbuf = outbuf[bytes_written:]
+                        if len(outbuf) == 0:
+                            self.epoll.modify(self.sock.fileno(), select.EPOLLIN)
+
+        finally:
+            self.close()
+            return
 
 if __name__ == "__main__":
-    server = "localhost"
-    directory = os.path.join(os.getcwd(), "faux_irc_channels")
+    parser = OptionParser()
+    parser.add_option("-s", "--server",
+                      action="store", type="string", dest="server", default="localhost")
+    parser.add_option("-p", "--port",
+                      action="store", type="int", dest="port", default=42424)
+    parser.add_option("-d", "--dir",
+                      action="store", type="string", dest="directory", default=os.path.join(os.getcwd(), "faux_irc_channels"))
+    (options, args) = parser.parse_args()
 
-    manager = ClientManager(server, PORT, directory)
+    manager = ClientManager(options.server, options.port, options.directory)
     manager.setup()
     manager.loop()
